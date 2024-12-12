@@ -1,0 +1,6 @@
+package cn.shawyaw.chatroom;
+
+public class UserInfo {
+
+	String name;
+}
