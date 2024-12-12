@@ -1,0 +1,97 @@
+package cn.shawyaw.chatroom;
+
+
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.ArrayList;
+
+public class Server {
+	ServerSocket server;
+	private ArrayList<User> userList;
+	
+	public static Server instance;
+	
+	public static Server getInstance() {
+		if(Server.instance==null) {
+			Server.instance=new Server();
+		}
+		return Server.instance;
+	}
+	
+	public ArrayList<User> getUserList() {
+	    return this.userList;
+	}
+
+//	public void broadcastToAll(byte[] buff, int len) {
+//	    for(User s : this.userList) {
+//	        s.sendMessage(buff, len);
+//	    }
+//	}
+	//同步改变
+	public synchronized void broadcastToAll(byte[] buff, int len) {
+	    System.out.println("广播消息给所有用户，长度: " + len);
+	    for (User user : new ArrayList<>(userList)) { // 创建副本避免并发修改
+	        try {
+	            user.sendMessage(buff, len);
+	        } catch (Exception e) {
+	            System.out.println("向用户发送消息失败: " + e.getMessage());
+	            remove(user);
+	        }
+	    }
+	}
+	
+	public Server() {
+		this.userList=new ArrayList<>();
+		init();
+	}
+	
+	public void remove(User u) {
+	    System.out.println("移除用户: " + (u.userInfo != null ? u.userInfo.getName() : "未知用户"));
+	    userList.remove(u);
+	}
+	
+	
+	public boolean reacher(User u) {
+		for(User s:this.userList) {
+			if(s==u)
+				return true;
+		}
+		return false;
+	}
+	
+	public void add(User u) {
+	    System.out.println("添加用户: " + u.userInfo.getName());
+	    this.userList.add(u);
+	}
+	
+	public void broadcast(User u,byte[] buff,int len) {
+		for(User s:this.userList) {
+			if(s==u)
+				continue;
+			s.sendMessage(buff,len);
+		}
+	}
+	
+	
+	
+	public void init() {
+	    try {
+	        this.server = new ServerSocket(Configure.PORT);
+	        System.out.println("服务器启动，监听端口: " + Configure.PORT); // 调试信息
+	        
+	        while(true) {
+	            System.out.println("等待新的连接..."); // 调试信息
+	            Socket s = this.server.accept();
+	            System.out.println("新客户端连接: " + s.getInetAddress()); // 调试信息
+	            User u = new User(s);
+	            new Thread(u).start();
+	        }
+	    } catch (Exception e) {
+	        System.out.println("服务器异常: " + e.getMessage()); // 调试信息
+	        e.printStackTrace();
+	    }
+	}
+	public static void main(String args[]) {
+		Server.getInstance();
+	}
+}
