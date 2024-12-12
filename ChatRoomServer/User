@@ -1,0 +1,219 @@
+package cn.shawyaw.chatroom;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.Socket;
+
+public class User implements Runnable {
+
+	Socket me;
+	UserInfo userInfo;
+	InputStream in;
+	OutputStream out;
+	
+	public User(Socket me) {
+		
+		try {
+			this.me=me;
+			this.out=me.getOutputStream();
+			this.in=me.getInputStream();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+	
+	public void sendMessage(String message) {
+		this.sendMessage(message.getBytes(),message.length());
+	}
+	
+	public void sendMessage(byte[] buffer, int len) {
+	    try {
+	        this.out.write(buffer, 0, len);
+	        this.out.flush();
+	        System.out.println("消息发送成功，长度: " + len); // 调试信息
+	    } catch (IOException e) {
+	        System.out.println("消息发送失败: " + e.getMessage()); // 调试信息
+	        e.printStackTrace();
+	    }
+	}
+	
+    public void run() {
+        try {
+            byte[] buffer = new byte[1024];
+            int len = 0;
+            
+            while(true) {
+                len = in.read(buffer);
+                if(len == -1) {
+                    handleUserDisconnect();
+                    break;
+                }
+                byte messageType = buffer[0];
+                System.out.println("收到消息类型: " + messageType);
+                
+                switch(messageType) {
+                    case Configure.LOGIN:
+                        handleLogin(buffer, len);
+                        break;
+                        
+                    case Configure.REGISTER:  // 添加注册消息处理
+                        handleRegister(buffer, len);
+                        break;
+                        
+                    case Configure.MESSAGE:
+                        handleChatMessage(buffer, len);
+                        break;
+                        
+                    case Configure.QUIT:
+                        handleUserDisconnect();
+                        return;
+                }
+            }
+        } catch(Exception e) {
+            System.out.println("用户线程异常: " + e.getMessage());
+            e.printStackTrace();
+            handleUserDisconnect();
+        }
+    }
+
+	// 添加新方法处理用户断开连接
+	private void handleUserDisconnect() {
+	    if (this.userInfo != null) {
+	        System.out.println("用户断开连接: " + this.userInfo.getName());
+	        Server.getInstance().remove(this);
+	        sendUserList(); // 广播更新后的用户列表
+	    }
+	    try {
+	        if (me != null && !me.isClosed()) {
+	            me.close();
+	        }
+	    } catch (IOException e) {
+	        e.printStackTrace();
+	    }
+	}
+	
+	private void handleLogin(byte[] buffer, int len) {
+	    String loginData = new String(buffer, 1, len - 1);
+	    String[] credentials = loginData.split(":");
+	    if (credentials.length == 2) {
+	        String username = credentials[0];
+	        String password = credentials[1];
+	        
+	        if (DataBase.validateUser(username, password)) {
+	            this.userInfo = new UserInfo();
+	            this.userInfo.setName(username);
+	            Server.getInstance().add(this);
+	            
+	            // 发送登录成功响应
+	            byte[] response = new byte[]{Configure.LOGIN};
+	            sendMessage(response, response.length);
+	            
+	            // 广播更新后的用户列表
+	            sendUserList();
+	        } else {
+	            byte[] response = new byte[]{Configure.PASS_ERROR};
+	            sendMessage(response, response.length);
+	        }
+	    }
+	}
+	
+    private void handleRegister(byte[] buffer, int len) {
+        String registerData = new String(buffer, 1, len - 1);
+        String[] credentials = registerData.split(":");
+        if (credentials.length == 2) {
+            String username = credentials[0];
+            String password = credentials[1];
+            
+            System.out.println("处理注册请求 - 用户名: " + username); // 调试信息
+            
+            if (DataBase.registerUser(username, password)) {
+                // 注册成功
+                byte[] response = new byte[]{Configure.REGISTER_SUCCESS};
+                sendMessage(response, response.length);
+                System.out.println("用户注册成功: " + username);
+            } else {
+                // 注册失败
+                byte[] response = new byte[]{Configure.REGISTER_FAIL};
+                sendMessage(response, response.length);
+                System.out.println("用户注册失败: " + username);
+            }
+        }
+    }
+	
+	private void handleChatMessage(byte[] buffer, int len) {
+	    if (this.userInfo != null) {
+	        // 构造带发送者名字的消息
+	        String message = this.userInfo.getName() + ": " + new String(buffer, 1, len - 1);
+	        System.out.println("广播消息: " + message);
+	        
+	        // 将消息广播给所有用户
+	        byte[] broadcastMsg = new byte[message.getBytes().length + 1];
+	        broadcastMsg[0] = Configure.MESSAGE;
+	        System.arraycopy(message.getBytes(), 0, broadcastMsg, 1, message.getBytes().length);
+	        
+	        Server.getInstance().broadcastToAll(broadcastMsg, broadcastMsg.length);
+	    }
+	}
+
+//	private void sendUserList() {
+//	    StringBuilder userListStr = new StringBuilder();
+//	    for (User user : Server.getInstance().getUserList()) {
+//	        if (user.userInfo != null && user.userInfo.getName() != null) {
+//	            userListStr.append(user.userInfo.getName()).append(",");
+//	        }
+//	    }
+//	    
+//	    byte[] userListData = new byte[userListStr.length() + 1];
+//	    userListData[0] = Configure.USER_LIST;
+//	    System.arraycopy(userListStr.toString().getBytes(), 0, 
+//	                    userListData, 1, userListStr.length());
+//	    
+//	    Server.getInstance().broadcastToAll(userListData, userListData.length);
+//	}
+	
+	private void sendUserList() {
+	    StringBuilder userListStr = new StringBuilder();
+	    for (User user : Server.getInstance().getUserList()) {
+	        if (user.userInfo != null && user.userInfo.getName() != null) {
+	            if (userListStr.length() > 0) {
+	                userListStr.append(",");
+	            }
+	            userListStr.append(user.userInfo.getName());
+	        }
+	    }
+	    
+	    byte[] userListData = new byte[userListStr.length() + 1];
+	    userListData[0] = Configure.USER_LIST;
+	    System.arraycopy(userListStr.toString().getBytes(), 0, 
+	                    userListData, 1, userListStr.length());
+	    
+	    Server.getInstance().broadcastToAll(userListData, userListData.length);
+	    System.out.println("已广播更新后的用户列表: " + userListStr.toString());
+	}
+
+//	private void broadcastUserList() {
+//	    StringBuilder userListBuilder = new StringBuilder();
+//	    for (User user : Server.getInstance().getUserList()) {
+//	        userListBuilder.append(user.userInfo.getName()).append(",");
+//	    }
+//	    
+//	    byte[] userListMessage = new byte[1 + userListBuilder.length()];
+//	    userListMessage[0] = Configure.USER_LIST;
+//	    System.arraycopy(userListBuilder.toString().getBytes(), 0, userListMessage, 1, userListBuilder.length());
+//	    
+//	    Server.getInstance().broadcastToAll(userListMessage, userListMessage.length);
+//	}
+	
+}
+
+class UserInfo{
+	private String name;
+	public String getName() {
+		return name;
+	}
+	public void setName(String name) {
+		this.name=name;
+	}
+}
