@@ -1,0 +1,101 @@
+package cn.shawyaw.chatroom;
+
+import java.util.ArrayList;
+
+import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
+
+public class MainApplication {
+    ArrayList<UserInfo> userList;
+    UserInfo self;
+    
+    public static MainApplication instance;
+    public static MainApplication getInstance() {
+        if(MainApplication.instance==null) {
+            MainApplication.instance=new MainApplication();
+        }
+        return MainApplication.instance;
+    }
+    
+    public MainApplication() {
+        init();
+    }
+    
+    public void init() {
+        Connect.getInstance();
+        this.userList = new ArrayList<>();
+        this.self = new UserInfo();
+    }
+    
+    public static void main(String args[]) {
+        // 启动登录界面
+        LoginFrame.launch();
+    }
+    
+    public void handleMessage(byte[] buff, int len) {
+        byte messageType = buff[0];
+        System.out.println("收到消息类型: " + messageType);
+        
+        switch(messageType) {
+            case Configure.LOGIN:
+                System.out.println("登录成功，准备打开聊天窗口");
+                SwingUtilities.invokeLater(() -> {
+                    LoginFrame.getInstance().dispose();
+                    ChatFrame chatFrame = ChatFrame.getInstance();
+                    chatFrame.setVisible(true);
+                    chatFrame.showSystemMessage("欢迎加入聊天室！");
+                });
+                break;
+                
+            case Configure.REGISTER_SUCCESS:
+                SwingUtilities.invokeLater(() -> {
+                    JOptionPane.showMessageDialog(null, 
+                        "注册成功！请使用新账号登录。", 
+                        "注册成功", 
+                        JOptionPane.INFORMATION_MESSAGE);
+                });
+                break;
+                
+            case Configure.REGISTER_FAIL:
+                SwingUtilities.invokeLater(() -> {
+                    JOptionPane.showMessageDialog(null, 
+                        "注册失败！用户名可能已存在。", 
+                        "注册失败", 
+                        JOptionPane.ERROR_MESSAGE);
+                });
+                break;
+                
+            case Configure.USER_LIST:
+                String userListStr = new String(buff, 1, len - 1);
+                String[] users = userListStr.split(",");
+                userList.clear();
+                for (String username : users) {
+                    if (!username.isEmpty()) {
+                        UserInfo user = new UserInfo();
+                        user.name = username;
+                        userList.add(user);
+                    }
+                }
+                SwingUtilities.invokeLater(() -> {
+                    if (ChatFrame.getInstance() != null) {
+                        ChatFrame.getInstance().updateUserList(userList);
+                    }
+                });
+                break;
+                
+            case Configure.MESSAGE:
+                String message = new String(buff, 1, len - 1);
+                System.out.println("收到消息: " + message);
+                SwingUtilities.invokeLater(() -> {
+                    ChatFrame.getInstance().appendMessage(message);
+                });
+                break;
+        }
+    }
+    
+    
+    
+
+    
+
+}
