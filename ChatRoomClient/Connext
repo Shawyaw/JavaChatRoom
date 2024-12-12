@@ -1,0 +1,137 @@
+package cn.shawyaw.chatroom;
+import java.io.IOException;
+
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.Socket;
+import javax.swing.JOptionPane;
+
+public class Connect implements Runnable{
+	public boolean isRunning = false;
+	public static Connect instance;
+	
+	public static Connect getInstance() {
+		if(Connect.instance==null) {
+			Connect.instance=new Connect();
+		}
+		return Connect.instance;
+	}
+	
+	Socket me;
+	OutputStream out;
+	InputStream in;
+	
+	public Connect() {
+		init();
+	}
+	
+    public void init() {
+        try {
+            System.out.println("正在连接服务器..."); // 调试信息
+            this.me = new Socket(Configure.IP, Configure.PORT);
+            this.out = this.me.getOutputStream();
+            this.in = this.me.getInputStream();
+            System.out.println("服务器连接成功"); // 调试信息
+        } catch (IOException e) {
+            System.out.println("服务器连接失败: " + e.getMessage()); // 调试信息
+            e.printStackTrace();
+            throw new RuntimeException("无法连接到服务器");
+        }
+    }
+	
+    public void sendLoginRequest(String username, String password) {
+        try {
+            String loginData = username + ":" + password;
+            byte[] data = new byte[loginData.length() + 1];
+            data[0] = Configure.LOGIN;
+            System.arraycopy(loginData.getBytes(), 0, data, 1, loginData.length());
+            
+            System.out.println("发送登录请求 - 用户名: " + username); // 调试信息
+            this.out.write(data);
+            this.out.flush();
+            System.out.println("登录请求已发送"); // 调试信息
+        } catch (IOException e) {
+            System.out.println("发送登录请求失败: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("发送登录请求失败");
+        }
+    }
+    
+    public void sendRegisterRequest(String username, String password) {
+        try {
+            String registerData = username + ":" + password;
+            byte[] data = new byte[registerData.length() + 1];
+            data[0] = Configure.REGISTER;  // 使用REGISTER类型
+            System.arraycopy(registerData.getBytes(), 0, data, 1, registerData.length());
+            
+            System.out.println("发送注册请求 - 用户名: " + username); // 调试信息
+            this.out.write(data);
+            this.out.flush();
+            System.out.println("注册请求已发送"); // 调试信息
+        } catch (IOException e) {
+            System.out.println("发送注册请求失败: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("发送注册请求失败");
+        }
+    }
+
+	public void sendQuitRequest() {
+	    try {
+	        byte[] quitRequest = new byte[]{Configure.QUIT};
+	        this.out.write(quitRequest);
+	        this.out.flush();
+	    } catch (IOException e) {
+	        e.printStackTrace();
+	    }
+	}
+
+	public void sendChatMessage(String message) {
+	    try {
+	        byte[] data = new byte[message.getBytes().length + 1];
+	        data[0] = Configure.MESSAGE;
+	        System.arraycopy(message.getBytes(), 0, data, 1, message.getBytes().length);
+	        
+	        System.out.println("发送消息: " + message); // 调试信息
+	        this.out.write(data);
+	        this.out.flush();
+	    } catch (IOException e) {
+	        System.out.println("发送消息失败: " + e.getMessage());
+	        e.printStackTrace();
+	        JOptionPane.showMessageDialog(null, 
+	            "发送消息失败", "错误", JOptionPane.ERROR_MESSAGE);
+	    }
+	}
+	
+    @Override
+    public void run() {
+        try {
+            byte[] buffer = new byte[1024];
+            int len = 0;
+            System.out.println("消息接收线程启动"); // 调试信息
+            
+            while (true) {
+                len = in.read(buffer);
+                if (len == -1) {
+                    System.out.println("服务器连接断开"); // 调试信息
+                    break;
+                }
+                
+                System.out.println("收到服务器消息，长度: " + len); // 调试信息
+                MainApplication.getInstance().handleMessage(buffer, len);
+            }
+        } catch (Exception e) {
+            System.out.println("消息接收出现异常: " + e.getMessage()); // 调试信息
+            e.printStackTrace();
+        } finally {
+            isRunning = false;
+            try {
+                if (me != null && !me.isClosed()) {
+                    me.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+	
